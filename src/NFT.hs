@@ -10,10 +10,11 @@ module NFT(
   hasNFT,
   nftPolicySerializer,
   testNftPolicySerializer,
+  createTestPlutusScript,
   NFTParams(..), nftAsset, testNFTParams
 ) where
 
-import Cardano.Api.Shelley                  (serialiseToCBOR, PlutusScript (..), PlutusScriptV2)
+import Cardano.Api.Shelley                  (writeFileTextEnvelope, serialiseToCBOR, PlutusScript (..), PlutusScriptV2)
 import Codec.Serialise
 import Data.ByteString.Lazy qualified       as LBS
 import Data.ByteString.Short qualified      as SBS
@@ -26,7 +27,7 @@ import qualified Data.ByteString            as B
 import           Plutus.V1.Ledger.Value     (assetClassValueOf, Value, AssetClass(..), flattenValue)
 import Plutus.V2.Ledger.Contexts            as V2
 import           Plutus.V2.Ledger.Api       (CurrencySymbol, MintingPolicy, TokenName, mkMintingPolicyScript)
-import           Prelude                    (Show (..))
+import           Prelude                    (Show (..), String, IO)
 
 -- data type for thread NFT 
 data NFTParams = NFTParams 
@@ -75,26 +76,27 @@ policy outRef tokenName = mkMintingPolicyScript $
     wrap out tn = Scripts.mkUntypedMintingPolicy $ mkNFTPolicy out tn
 
 -- Serialization
-nftPolicySerializer :: TxOutRef -> TokenName -> B.ByteString
-nftPolicySerializer outRef tn =
-  B16.encode $ serialiseToCBOR (
+nftPlutusScript :: TxOutRef -> TokenName -> PlutusScript PlutusScriptV2
+nftPlutusScript outRef tn =
     PlutusScriptSerialised $
      SBS.toShort . LBS.toStrict $
       serialise $
         V2.unMintingPolicyScript $ policy outRef tn
-    :: PlutusScript PlutusScriptV2)
+
+nftPolicySerializer :: TxOutRef -> TokenName -> B.ByteString
+nftPolicySerializer outRef tn = B16.encode $ serialiseToCBOR $ nftPlutusScript outRef tn 
 
 
 -- For tests
 testOref :: TxOutRef
-testOref = TxOutRef "d36b6b3cf1dd77d703aac9fdc360485664064c1dac0189442d65707d99181e1d" 2
+testOref = TxOutRef "3ed86209a1a7b4aaaadd6bbcd1ca5d8624107e5e5d54cc7726f3b69a3389f212" 1
 
 testNftPolicySerializer :: B.ByteString
 testNftPolicySerializer = nftPolicySerializer testOref (name testNFTParams)
 
 
 testNftPolicyId :: CurrencySymbol
-testNftPolicyId = "443aaee673ee6282a71384cf90e9eb827f5deb415e303c7bdd85bafc"
+testNftPolicyId = "5df4c129ad0a48c5463ab8236459f2b839961c3a2551bb0bcc456020"
 
 testNFTParams :: NFTParams 
 testNFTParams = NFTParams 
@@ -102,3 +104,8 @@ testNFTParams = NFTParams
     policyId = testNftPolicyId
   , name = V2.TokenName "Thread_NFT"
   }
+
+createTestPlutusScript :: String -> IO ()
+createTestPlutusScript filename = do
+  result <- writeFileTextEnvelope filename Nothing (nftPlutusScript testOref (name testNFTParams))
+  return()

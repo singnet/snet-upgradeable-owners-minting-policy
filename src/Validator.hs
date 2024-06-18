@@ -10,7 +10,8 @@
 
 module Validator(
     validatorScriptSerializer,
-    testValidatorScriptSerializer
+    testValidatorScriptSerializer,
+    createTestPlutusScript
 ) where
 
 import Plutus.V2.Ledger.Api
@@ -25,8 +26,8 @@ import Data.ByteString.Short         qualified as SBS
 import Data.ByteString.Base16                  as B16
 import Data.ByteString                         as B
 import Codec.Serialise                         as Serialise
-import Prelude                                 (Show)
-import Cardano.Api.Shelley                     (PlutusScript (PlutusScriptSerialised),
+import Prelude                                 (Show, IO, show, String)
+import Cardano.Api.Shelley                     (displayError, writeFileTextEnvelope, PlutusScript (PlutusScriptSerialised),
                                                 PlutusScriptV2, serialiseToCBOR)   
 import NFT                                     (hasNFT, NFTParams(..), testNFTParams)
 
@@ -69,7 +70,7 @@ upgradeableAddressesValidator nftparams datum redeemer ctx =
                                             getUpdatedOwners (minSigs datum))
         UpdateThreshold newThreshold -> traceIfFalse "Threshold not updated" 
                                           (owners datum == getUpdatedOwners newThreshold &&
-                                           newThreshold >= 2)
+                                           newThreshold >= 2 && newThreshold <= PP.length (owners datum))
   where
     info :: TxInfo
     !info = scriptContextTxInfo ctx
@@ -100,16 +101,26 @@ validator nftparams = V2.mkValidatorScript $
   where
     wrap nparams = Scripts.mkUntypedValidator $ upgradeableAddressesValidator nparams
 
-validatorScriptSerializer :: NFTParams -> B.ByteString
-validatorScriptSerializer nftparams =
-  B16.encode $ serialiseToCBOR (
+
+-- Serialization
+validatorPlutusScript :: NFTParams -> PlutusScript PlutusScriptV2
+validatorPlutusScript nftparams =
     PlutusScriptSerialised $
      SBS.toShort . LBS.toStrict $
       Serialise.serialise $
         validator nftparams
-    :: PlutusScript PlutusScriptV2)
+
+
+validatorScriptSerializer :: NFTParams -> B.ByteString
+validatorScriptSerializer nftparams = B16.encode $ serialiseToCBOR $ validatorPlutusScript
 
 
 -- For tests
 testValidatorScriptSerializer :: B.ByteString
 testValidatorScriptSerializer = validatorScriptSerializer testNFTParams
+
+
+createTestPlutusScript :: String -> IO ()
+createTestPlutusScript filename = do
+  result <- writeFileTextEnvelope filename Nothing (validatorPlutusScript testNFTParams)
+  return()

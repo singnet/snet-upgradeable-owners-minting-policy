@@ -9,7 +9,8 @@
 
 module Token(
   tokenPolicySerializer,
-  testTokenPolicySerializer
+  testTokenPolicySerializer,
+  createTestPlutusScript
 ) where
 
 import Plutus.Script.Utils.Typed           as Scripts
@@ -27,11 +28,11 @@ import           PlutusTx.Prelude          (traceIfFalse, traceError, Bool(..), 
 import qualified Data.ByteString.Short     as SBS
 import qualified Codec.Serialise           as Serialise
 import           Data.ByteString.Base16    as B16
-import           Cardano.Api.Shelley       (PlutusScript (PlutusScriptSerialised),
+import           Cardano.Api.Shelley       (writeFileTextEnvelope, PlutusScript (PlutusScriptSerialised),
                                             PlutusScriptV2,serialiseToCBOR)   
 import qualified Data.ByteString           as B
 import           NFT                       (hasNFT, NFTParams(..), testNFTParams)
-import           Prelude                   (Show (..))
+import           Prelude                   (Show (..), String, IO, return)
 
 -- Custom data type to hold the owners' public keys
 data ValidatorDatum = ValidatorDatum
@@ -85,14 +86,15 @@ policy nftparams tokenName = mkMintingPolicyScript $
     wrap nparams tn = Scripts.mkUntypedMintingPolicy $ mkTokenPolicy nparams tn
 
 -- Serialization
-tokenPolicySerializer :: NFTParams -> TokenName -> B.ByteString
-tokenPolicySerializer nftparams tokenName =
-  B16.encode $ serialiseToCBOR (
+tokenPlutusScript :: NFTParams -> TokenName -> PlutusScript PlutusScriptV2
+tokenPlutusScript nftparams tokenName =
     PlutusScriptSerialised $
      SBS.toShort . LBS.toStrict $
       Serialise.serialise $
         unMintingPolicyScript $ policy nftparams tokenName
-    :: PlutusScript PlutusScriptV2)
+
+tokenPolicySerializer :: NFTParams -> TokenName -> B.ByteString
+tokenPolicySerializer nftparams tokenName = B16.encode $ serialiseToCBOR $ tokenPlutusScript nftparams tokenName
 
 
 -- For tests
@@ -101,3 +103,8 @@ testTokenName = TokenName "TToken"
 
 testTokenPolicySerializer :: B.ByteString
 testTokenPolicySerializer = tokenPolicySerializer testNFTParams testTokenName
+
+createTestPlutusScript :: String -> IO ()
+createTestPlutusScript filename = do
+  result <- writeFileTextEnvelope filename Nothing (tokenPlutusScript testNFTParams testTokenName)
+  return()
