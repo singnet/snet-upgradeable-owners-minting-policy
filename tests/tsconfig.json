@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+    "esModuleInterop": true,
+    "lib": ["es2020"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "outDir": "dist",
+    "resolveJsonModule": true
+  
+  },
+  "include": ["./offchain.ts", "./secret.ts"],
+  "exclude": ["node_modules"]
+  }
