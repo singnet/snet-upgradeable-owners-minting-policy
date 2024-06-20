@@ -6,12 +6,12 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DeriveAnyClass        #-}
 
 module Validator(
-    validatorScriptSerializer,
-    testValidatorScriptSerializer,
-    createTestPlutusScript
+  validatorScriptSerializer,
+  validatorPlutusScript
 ) where
 
 import Plutus.V2.Ledger.Api
@@ -26,10 +26,10 @@ import Data.ByteString.Short         qualified as SBS
 import Data.ByteString.Base16                  as B16
 import Data.ByteString                         as B
 import Codec.Serialise                         as Serialise
-import Prelude                                 (Show, IO, show, String)
+import Prelude                                 (Eq, Show, IO, show, String)
 import Cardano.Api.Shelley                     (displayError, writeFileTextEnvelope, PlutusScript (PlutusScriptSerialised),
                                                 PlutusScriptV2, serialiseToCBOR)   
-import NFT                                     (hasNFT, NFTParams(..), testNFTParams)
+import NFT                                     (hasNFT, NFTParams(..))
 
 
 -- Datum type
@@ -44,54 +44,65 @@ PlutusTx.makeLift ''MultiSigDatum
 -- Redeemer type
 data MultisigRedeemer = 
       TokenMint
-    | AddAddress PubKeyHash 
-    | RemoveAddress PubKeyHash 
+    | AddOwner PubKeyHash Integer 
+    | RemoveOwner PubKeyHash Integer
     | UpdateThreshold Integer
   deriving (Show)
                   
 PlutusTx.makeIsDataIndexed ''MultisigRedeemer [ ('TokenMint, 0)
-                                              , ('AddAddress, 1)
-                                              , ('RemoveAddress, 2)
+                                              , ('AddOwner, 1)
+                                              , ('RemoveOwner, 2)
                                               , ('UpdateThreshold, 3)
                                               ]
 PlutusTx.makeLift ''MultisigRedeemer
 
 
-{-# INLINABLE upgradeableAddressesValidator #-}
-upgradeableAddressesValidator :: NFTParams -> MultiSigDatum -> MultisigRedeemer -> ScriptContext -> Bool
-upgradeableAddressesValidator nftparams datum redeemer ctx = 
+{-# INLINABLE upgradeableOwnersValidator #-}
+upgradeableOwnersValidator :: NFTParams -> MultiSigDatum -> MultisigRedeemer -> ScriptContext -> Bool
+upgradeableOwnersValidator nftparams datum redeemer ctx = 
     traceIfFalse "Not enough owners signed tx" checkMinSigs &&
     case redeemer of
-        TokenMint                    -> (owners datum == getUpdatedOwners (minSigs datum)) 
-        AddAddress newAddr           -> traceIfFalse "Address not added"
-                                          ((newAddr : owners datum) == getUpdatedOwners (minSigs datum))
-        RemoveAddress oldAddr        -> traceIfFalse "Address not removed" 
-                                          ((PP.filter (/= oldAddr) (owners datum)) == 
-                                            getUpdatedOwners (minSigs datum))
-        UpdateThreshold newThreshold -> traceIfFalse "Threshold not updated" 
-                                          (owners datum == getUpdatedOwners newThreshold &&
-                                           newThreshold >= 2 && newThreshold <= PP.length (owners datum))
-  where
+      TokenMint                         -> traceIfFalse "Datum was changed" 
+                                            (checkConsistencyOfOutputDatum (owners datum) (minSigs datum))
+      AddOwner newOwner newThreshold    -> traceIfFalse "Owner not added" 
+                                            (checkConsistencyOfOutputDatum (newOwner : owners datum) newThreshold) &&
+                                            (checkThresholdInterval newThreshold (PP.length (owners datum) PP.+ 1))
+      RemoveOwner oldOwner newThreshold -> traceIfFalse "Owner not removed" 
+                                            (checkConsistencyOfOutputDatum (PP.filter (/= oldOwner) (owners datum)) newThreshold) &&
+                                            (checkThresholdInterval newThreshold (PP.length (owners datum) PP.- 1))
+      UpdateThreshold newThreshold      -> traceIfFalse "Threshold not updated" 
+                                            (checkConsistencyOfOutputDatum (owners datum) newThreshold) &&
+                                            (checkThresholdInterval newThreshold (PP.length (owners datum)))
+                                                                        
+  where                                  
     info :: TxInfo
-    !info = scriptContextTxInfo ctx
+    info = scriptContextTxInfo ctx
 
-    getOutputWithNFT :: TxOut
-    !getOutputWithNFT = case PV2.getContinuingOutputs ctx of
-        [out] | hasNFT nftparams $ txOutValue $ out -> out
-        _ -> traceError "no output with nft"
-
-    -- returns owners from output with NFT
-    getUpdatedOwners :: Integer -> [PubKeyHash]
-    getUpdatedOwners expectedThreshold = case txOutDatum getOutputWithNFT of
-        OutputDatum d -> case fromBuiltinData (getDatum d) of
-            Nothing                               -> traceError "invalid datum"
-            Just (MultiSigDatum owners' minSigs') -> 
-                if minSigs' == expectedThreshold then owners' else traceError "unexpected threshold update"
-        _             -> traceError "no inline datum"
-      
     checkMinSigs :: Bool
     checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) (owners datum)) >= minSigs datum
 
+    getOutputWithNFT :: TxOut
+    getOutputWithNFT = case PV2.getContinuingOutputs ctx of
+        [out] | hasNFT nftparams $ txOutValue $ out -> out
+        _ -> traceError "no output with nft"
+
+    getContinuingOutputDatum :: MultiSigDatum
+    getContinuingOutputDatum = case txOutDatum getOutputWithNFT of
+        OutputDatum d -> case fromBuiltinData (getDatum d) of
+          Nothing            -> traceError "invalid datum type"
+          Just multiSigDatum -> multiSigDatum 
+        _  -> traceError "no inline datum"
+
+    checkConsistencyOfOutputDatum :: [PubKeyHash] -> Integer -> Bool
+    checkConsistencyOfOutputDatum expectedOwners expectedThreshold = 
+      let 
+        outputDatum = getContinuingOutputDatum
+      in  
+        if expectedOwners == (owners outputDatum) && expectedThreshold == (minSigs outputDatum)
+          then True else traceError "unexpected output datum"
+
+    checkThresholdInterval :: Integer -> Integer -> Bool
+    checkThresholdInterval expectedThreshold maxThreshold = expectedThreshold >= 2 && expectedThreshold <= maxThreshold
 
 validator :: NFTParams -> V2.Validator
 validator nftparams = V2.mkValidatorScript $
@@ -99,7 +110,7 @@ validator nftparams = V2.mkValidatorScript $
     `PlutusTx.applyCode`
      PlutusTx.liftCode nftparams
   where
-    wrap nparams = Scripts.mkUntypedValidator $ upgradeableAddressesValidator nparams
+    wrap nparams = Scripts.mkUntypedValidator $ upgradeableOwnersValidator nparams
 
 
 -- Serialization
@@ -110,17 +121,6 @@ validatorPlutusScript nftparams =
       Serialise.serialise $
         validator nftparams
 
-
 validatorScriptSerializer :: NFTParams -> B.ByteString
-validatorScriptSerializer nftparams = B16.encode $ serialiseToCBOR $ validatorPlutusScript
+validatorScriptSerializer nftparams = B16.encode $ serialiseToCBOR $ validatorPlutusScript nftparams
 
-
--- For tests
-testValidatorScriptSerializer :: B.ByteString
-testValidatorScriptSerializer = validatorScriptSerializer testNFTParams
-
-
-createTestPlutusScript :: String -> IO ()
-createTestPlutusScript filename = do
-  result <- writeFileTextEnvelope filename Nothing (validatorPlutusScript testNFTParams)
-  return()

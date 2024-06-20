@@ -5,12 +5,10 @@
 {-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE BangPatterns          #-}
 
 module Token(
   tokenPolicySerializer,
-  testTokenPolicySerializer,
-  createTestPlutusScript
+  tokenPlutusScript
 ) where
 
 import Plutus.Script.Utils.Typed           as Scripts
@@ -31,7 +29,7 @@ import           Data.ByteString.Base16    as B16
 import           Cardano.Api.Shelley       (writeFileTextEnvelope, PlutusScript (PlutusScriptSerialised),
                                             PlutusScriptV2,serialiseToCBOR)   
 import qualified Data.ByteString           as B
-import           NFT                       (hasNFT, NFTParams(..), testNFTParams)
+import           NFT                       (hasNFT, NFTParams(..))
 import           Prelude                   (Show (..), String, IO, return)
 
 -- Custom data type to hold the owners' public keys
@@ -44,31 +42,34 @@ PlutusTx.makeIsDataIndexed ''ValidatorDatum [('ValidatorDatum, 0)]
 PlutusTx.makeLift ''ValidatorDatum
 
 
--- Token policy with upgradeable `owners`
+-- Token policy that mints tokens only if input with specific NFT is consumed 
 {-# INLINABLE mkTokenPolicy #-}
 mkTokenPolicy :: NFTParams -> TokenName -> () -> ScriptContext -> Bool
 mkTokenPolicy nftparams tokenName _ ctx = 
     let
       info :: TxInfo
-      !info = scriptContextTxInfo ctx
+      info = scriptContextTxInfo ctx
 
       -- Check for minting token & whether the token is correct
       mintedValue :: Integer
       mintedValue = case flattenValue (txInfoMint info) of
-        [(cs, tn, amt)] ->
-          if cs == ownCurrencySymbol ctx && tn == tokenName
+        [(_, tn, amt)] ->
+          if tn == tokenName
             then amt else traceError "incorrect token"
         _ -> traceError "expected one policy"
 
-      -- Check if it's a minting transaction
+      -- Check type of transaction: minting or burning
       isMinting :: Bool
       isMinting = mintedValue > 0
    
-      -- Check that `validator`'s output with NFT will be spent 
+      -- Check that Validator's output with NFT will be spent 
       scriptValidationIsEnsured :: Bool
       scriptValidationIsEnsured = 
-        let ins = [ o | i <- txInfoInputs info, let o = txInInfoResolved i, hasNFT nftparams $ txOutValue o ]
-        in case ins of
+        case [ o 
+                | i <- txInfoInputs info
+                , let o = txInInfoResolved i
+                , hasNFT nftparams $ txOutValue o 
+                ] of
           [_] -> True
           _ -> traceError "no NFT in input"
     in
@@ -95,16 +96,3 @@ tokenPlutusScript nftparams tokenName =
 
 tokenPolicySerializer :: NFTParams -> TokenName -> B.ByteString
 tokenPolicySerializer nftparams tokenName = B16.encode $ serialiseToCBOR $ tokenPlutusScript nftparams tokenName
-
-
--- For tests
-testTokenName :: TokenName
-testTokenName = TokenName "TToken"
-
-testTokenPolicySerializer :: B.ByteString
-testTokenPolicySerializer = tokenPolicySerializer testNFTParams testTokenName
-
-createTestPlutusScript :: String -> IO ()
-createTestPlutusScript filename = do
-  result <- writeFileTextEnvelope filename Nothing (tokenPlutusScript testNFTParams testTokenName)
-  return()

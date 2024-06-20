@@ -12,6 +12,7 @@ library
     exposed-modules:    NFT
                       , Token
                       , Validator
+                      , TestSerializer
     build-depends:      base >=4.7 && <5
                       , aeson
                       , bytestring
