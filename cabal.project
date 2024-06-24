@@ -194,8 +194,7 @@ source-repository-package
       libs/small-steps-test
       libs/non-integral
 
--- This is needed because we rely on an unreleased feature
--- https://github.com/input-output-hk/cardano-ledger/pull/3111
+-- This is needed because the packages are missing from CHaP at the specified index-state.
 source-repository-package
     type: git
     location: https://github.com/IntersectMBO/plutus-apps
