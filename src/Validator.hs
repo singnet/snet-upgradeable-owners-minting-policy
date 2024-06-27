@@ -59,27 +59,33 @@ PlutusTx.makeLift ''MultisigRedeemer
 
 {-# INLINABLE upgradeableOwnersValidator #-}
 upgradeableOwnersValidator :: NFTParams -> MultiSigDatum -> MultisigRedeemer -> ScriptContext -> Bool
-upgradeableOwnersValidator nftparams datum redeemer ctx = 
+upgradeableOwnersValidator nftparams 
+  MultiSigDatum { owners=oldOwners
+                , minSigs=oldMinSigs
+                } 
+  redeemer 
+  ctx = 
     traceIfFalse "Not enough owners signed tx" checkMinSigs &&
     case redeemer of
       TokenMint                         -> traceIfFalse "Datum was changed" 
-                                            (checkConsistencyOfOutputDatum (owners datum) (minSigs datum))
+                                            (checkConsistencyOfOutputDatum oldOwners oldMinSigs)
       AddOwner newOwner newThreshold    -> traceIfFalse "Owner not added" 
-                                            (checkConsistencyOfOutputDatum (newOwner : owners datum) newThreshold) &&
-                                            (checkThresholdInterval newThreshold (PP.length (owners datum) PP.+ 1))
+                                            (checkConsistencyOfOutputDatum (newOwner : oldOwners) newThreshold) &&
+                                            (noOwnersDuplication newOwner) &&
+                                            (checkThresholdInterval newThreshold (PP.length oldOwners PP.+ 1)) 
       RemoveOwner oldOwner newThreshold -> traceIfFalse "Owner not removed" 
-                                            (checkConsistencyOfOutputDatum (PP.filter (/= oldOwner) (owners datum)) newThreshold) &&
-                                            (checkThresholdInterval newThreshold (PP.length (owners datum) PP.- 1))
+                                            (checkConsistencyOfOutputDatum (PP.filter (/= oldOwner) oldOwners) newThreshold) &&
+                                            (checkThresholdInterval newThreshold (PP.length oldOwners PP.- 1))
       UpdateThreshold newThreshold      -> traceIfFalse "Threshold not updated" 
-                                            (checkConsistencyOfOutputDatum (owners datum) newThreshold) &&
-                                            (checkThresholdInterval newThreshold (PP.length (owners datum)))
+                                            (checkConsistencyOfOutputDatum oldOwners newThreshold) &&
+                                            (checkThresholdInterval newThreshold (PP.length oldOwners))
                                                                         
   where                                  
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
     checkMinSigs :: Bool
-    checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) (owners datum)) >= minSigs datum
+    checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) oldOwners) >= oldMinSigs
 
     getOutputWithNFT :: TxOut
     getOutputWithNFT = case PV2.getContinuingOutputs ctx of
@@ -103,6 +109,10 @@ upgradeableOwnersValidator nftparams datum redeemer ctx =
 
     checkThresholdInterval :: Integer -> Integer -> Bool
     checkThresholdInterval expectedThreshold maxThreshold = expectedThreshold >= 2 && expectedThreshold <= maxThreshold
+    
+    noOwnersDuplication :: PubKeyHash -> Bool 
+    noOwnersDuplication ownerToAdd = traceIfFalse "Owner duplication" (PP.notElem ownerToAdd oldOwners)
+
 
 validator :: NFTParams -> V2.Validator
 validator nftparams = V2.mkValidatorScript $
