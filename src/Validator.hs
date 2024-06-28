@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE BangPatterns          #-}
 
 module Validator(
   validatorScriptSerializer,
@@ -82,18 +83,18 @@ upgradeableOwnersValidator nftparams
                                                                         
   where                                  
     info :: TxInfo
-    info = scriptContextTxInfo ctx
+    !info = scriptContextTxInfo ctx
 
     checkMinSigs :: Bool
-    checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) oldOwners) >= oldMinSigs
+    !checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) oldOwners) >= oldMinSigs
 
     getOutputWithNFT :: TxOut
-    getOutputWithNFT = case PV2.getContinuingOutputs ctx of
+    !getOutputWithNFT = case PV2.getContinuingOutputs ctx of
         [out] | hasNFT nftparams $ txOutValue $ out -> out
         _ -> traceError "no output with nft"
 
     getContinuingOutputDatum :: MultiSigDatum
-    getContinuingOutputDatum = case txOutDatum getOutputWithNFT of
+    !getContinuingOutputDatum = case txOutDatum getOutputWithNFT of
         OutputDatum d -> case fromBuiltinData (getDatum d) of
           Nothing            -> traceError "invalid datum type"
           Just multiSigDatum -> multiSigDatum 
@@ -102,7 +103,7 @@ upgradeableOwnersValidator nftparams
     checkConsistencyOfOutputDatum :: [PubKeyHash] -> Integer -> Bool
     checkConsistencyOfOutputDatum expectedOwners expectedThreshold = 
       let 
-        outputDatum = getContinuingOutputDatum
+        !outputDatum = getContinuingOutputDatum
       in  
         if expectedOwners == (owners outputDatum) && expectedThreshold == (minSigs outputDatum)
           then True else traceError "unexpected output datum"
