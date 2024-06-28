@@ -5,6 +5,7 @@
 {-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE BangPatterns          #-}
 
 module Token(
   tokenPolicySerializer,
@@ -48,11 +49,11 @@ mkTokenPolicy :: NFTParams -> TokenName -> () -> ScriptContext -> Bool
 mkTokenPolicy nftparams tokenName _ ctx = 
     let
       info :: TxInfo
-      info = scriptContextTxInfo ctx
+      !info = scriptContextTxInfo ctx
 
       -- Check for minting token & whether the token is correct
       mintedValue :: Integer
-      mintedValue = case flattenValue (txInfoMint info) of
+      !mintedValue = case flattenValue (txInfoMint info) of
         [(_, tn, amt)] ->
           if tn == tokenName
             then amt else traceError "incorrect token"
@@ -60,7 +61,7 @@ mkTokenPolicy nftparams tokenName _ ctx =
 
       -- Check type of transaction: minting or burning
       isMinting :: Bool
-      isMinting = mintedValue > 0
+      !isMinting = mintedValue > 0
    
       -- Check that Validator's output with NFT will be spent 
       scriptValidationIsEnsured :: Bool
