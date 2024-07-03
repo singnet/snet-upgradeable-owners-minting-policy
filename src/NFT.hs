@@ -1,45 +1,55 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE ImportQualifiedPost   #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 module NFT(
   hasNFT,
   nftPolicySerializer,
   nftPlutusScript,
   nftCurrencySymbol,
+  nftUnappliedPlutusScript,
   NFTParams(..), nftAsset
 ) where
 
-import Cardano.Api.Shelley                  (writeFileTextEnvelope, serialiseToCBOR, PlutusScript (..), PlutusScriptV2)
-import Codec.Serialise
-import Data.ByteString.Lazy qualified       as LBS
-import Data.ByteString.Short qualified      as SBS
-import Plutus.Script.Utils.Typed            as Scripts
-import Plutus.V2.Ledger.Api qualified       as V2
-import PlutusTx qualified
-import PlutusTx.Prelude
-import qualified Data.ByteString.Base16     as B16
-import qualified Data.ByteString            as B
-import           Plutus.V1.Ledger.Value     (mpsSymbol, assetClassValueOf, Value, AssetClass(..), flattenValue)
-import Plutus.V2.Ledger.Contexts            as V2
-import           Plutus.V2.Ledger.Api       (CurrencySymbol, MintingPolicy, TokenName, mkMintingPolicyScript)
-import           Prelude                    (Show (..), String, IO)
+import           Cardano.Api.Shelley            (PlutusScript (..),
+                                                 PlutusScriptV2,
+                                                 serialiseToCBOR,
+                                                 writeFileTextEnvelope)
+import           Codec.Serialise
+import qualified Data.ByteString                as B
+import qualified Data.ByteString.Base16         as B16
+import qualified Data.ByteString.Lazy           as LBS
+import qualified Data.ByteString.Short          as SBS
+import           Plutus.Script.Utils.Typed      as Scripts
 import qualified Plutus.Script.Utils.V2.Scripts as PSU.V2
+import           Plutus.V1.Ledger.Value         (AssetClass (..), Value,
+                                                 assetClassValueOf,
+                                                 flattenValue, mpsSymbol)
+import           Plutus.V2.Ledger.Api           (CurrencySymbol, MintingPolicy,
+                                                 TokenName, fromCompiledCode,
+                                                 mkMintingPolicyScript)
+import qualified Plutus.V2.Ledger.Api           as V2
+import           Plutus.V2.Ledger.Contexts      as V2
+import           PlutusTx                       (CompiledCode)
+import qualified PlutusTx
+import           PlutusTx.Prelude
+import           Prelude                        (IO, Show (..), String)
+import           ScriptUtils                    (toPlutusScriptV2)
 
--- data type for thread NFT 
-data NFTParams = NFTParams 
-    { policyId  :: CurrencySymbol
-    , name      :: TokenName
+-- data type for thread NFT
+data NFTParams = NFTParams
+    { policyId :: CurrencySymbol
+    , name     :: TokenName
     } deriving Show
 
 PlutusTx.makeIsDataIndexed ''NFTParams [('NFTParams, 0)]
 PlutusTx.makeLift ''NFTParams
 
-{-# INLINEABLE nftAsset #-} 
+{-# INLINEABLE nftAsset #-}
 nftAsset :: NFTParams -> AssetClass
 nftAsset nftparams = AssetClass (policyId nftparams, name nftparams)
 
@@ -47,7 +57,6 @@ nftAsset nftparams = AssetClass (policyId nftparams, name nftparams)
 {-# INLINABLE hasNFT #-}
 hasNFT :: NFTParams -> Value -> Bool
 hasNFT nftparams value = assetClassValueOf value (nftAsset nftparams) == 1
-
 
 -- NFT minting policy
 {-# INLINABLE mkNFTPolicy #-}
@@ -66,27 +75,34 @@ mkNFTPolicy oref tn _ ctx = traceIfFalse "UTxO not consumed"   hasUTxO &&
         [(_, tn'', amt)] -> tn'' == tn && amt == 1
         _                -> False
 
+policyUnapplied :: CompiledCode (TxOutRef -> TokenName -> BuiltinData -> BuiltinData -> ())
+policyUnapplied =
+    $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap out tn = Scripts.mkUntypedMintingPolicy $ mkNFTPolicy out tn
+
 policy :: TxOutRef -> TokenName -> MintingPolicy
 policy outRef tokenName = mkMintingPolicyScript $
-    $$(PlutusTx.compile [|| wrap ||])
+    policyUnapplied
     `PlutusTx.applyCode`
      PlutusTx.liftCode outRef
      `PlutusTx.applyCode`
      PlutusTx.liftCode tokenName
-  where
-    wrap out tn = Scripts.mkUntypedMintingPolicy $ mkNFTPolicy out tn
 
+currencySymbol :: MintingPolicy -> CurrencySymbol
+currencySymbol = mpsSymbol . PSU.V2.mintingPolicyHash
 
 nftCurrencySymbol :: TxOutRef -> TokenName -> CurrencySymbol
-nftCurrencySymbol outRef tokenName = mpsSymbol $ PSU.V2.mintingPolicyHash (policy outRef tokenName) 
+nftCurrencySymbol outRef tokenName = currencySymbol (policy outRef tokenName)
 
 -- Serialization
 nftPlutusScript :: TxOutRef -> TokenName -> PlutusScript PlutusScriptV2
-nftPlutusScript outRef tn =
-    PlutusScriptSerialised $
-     SBS.toShort . LBS.toStrict $
-      serialise $
-        V2.unMintingPolicyScript $ policy outRef tn
+nftPlutusScript outRef tn = toPlutusScriptV2 $
+  V2.unMintingPolicyScript $ policy outRef tn
+
+-- Serialization
+nftUnappliedPlutusScript :: PlutusScript PlutusScriptV2
+nftUnappliedPlutusScript = toPlutusScriptV2 $ fromCompiledCode policyUnapplied
 
 nftPolicySerializer :: TxOutRef -> TokenName -> B.ByteString
-nftPolicySerializer outRef tn = B16.encode $ serialiseToCBOR $ nftPlutusScript outRef tn 
+nftPolicySerializer outRef tn = B16.encode $ serialiseToCBOR $ nftPlutusScript outRef tn

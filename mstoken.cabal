@@ -1,36 +1,44 @@
-name:                snet-upgradeable-owners-minting-policy
-version:             1.0
-author:              SNET
-maintainer:          anastasia.martynyuk@singularitynet.io
-build-type:          Simple
-extra-source-files:  CHANGELOG.md
-cabal-version:       >=1.10
+name:               snet-upgradeable-owners-minting-policy
+version:            1.0
+author:             SNET
+maintainer:         anastasia.martynyuk@singularitynet.io
+build-type:         Simple
+extra-source-files: CHANGELOG.md
+cabal-version:      >=1.10
+
+executable save-scripts
+  main-is:       ./src/Main.hs
+  build-depends:
+      base                                    >=4.7 && <5
+    , snet-upgradeable-owners-minting-policy
 
 library
-    import:           common-all
-    hs-source-dirs:   ./src
-    exposed-modules:    NFT
-                      , Token
-                      , Validator
-                      , TestSerializer
-    build-depends:      base >=4.7 && <5
-                      , aeson
-                      , bytestring
-                      , plutus-ledger-api
-                      , plutus-tx
-                      , plutus-tx-plugin
-                      , containers
-                      , text
-                      , plutus-ledger              >=1.1.0
-                      , plutus-ledger-constraints  >=1.1.0
-                      , plutus-script-utils        >=1.1.0
-                      , cardano-api                >= 1.35.4
-                      , serialise  
-                      , base16-bytestring
-  default-language:    Haskell2010
+  import:           common-all
+  hs-source-dirs:   ./src
+  exposed-modules:
+    NFT
+    ScriptUtils
+    TestSerializer
+    Token
+    Validator
 
+  build-depends:
+      aeson
+    , base                       >=4.7    && <5
+    , base16-bytestring
+    , bytestring
+    , cardano-api                >=1.35.4
+    , containers
+    , plutus-ledger              >=1.1.0
+    , plutus-ledger-api
+    , plutus-ledger-constraints  >=1.1.0
+    , plutus-script-utils        >=1.1.0
+    , plutus-tx
+    , plutus-tx-plugin
+    , serialise
+    , text
 
-
+  default-language: Haskell2010
   ghc-options:
     -Wall -Wnoncanonical-monad-instances -Wunused-packages
     -Wincomplete-uni-patterns -Wincomplete-record-updates

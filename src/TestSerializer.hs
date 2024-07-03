@@ -1,10 +1,10 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE ImportQualifiedPost   #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 module TestSerializer(
   testNftPolicySerializer,
@@ -14,15 +14,21 @@ module TestSerializer(
   testNFTParams
 ) where
 
-import Prelude             (Show (..), String, IO, Maybe(..), return)
-import PlutusTx 
-import Plutus.V2.Ledger.Api    
-import Cardano.Api.Shelley  (writeFileTextEnvelope) 
-import qualified Data.ByteString as B
-import Plutus.V2.Ledger.Api (TokenName)
-import NFT                  (nftPolicySerializer, nftPlutusScript, nftCurrencySymbol, NFTParams(..))
-import Token                (tokenPolicySerializer, tokenPlutusScript)
-import Validator            (validatorScriptSerializer, validatorPlutusScript)
+import           Cardano.Api.Shelley  (writeFileTextEnvelope)
+import qualified Data.ByteString      as B
+import           NFT                  (NFTParams (..), nftCurrencySymbol,
+                                       nftPlutusScript, nftPolicySerializer,
+                                       nftUnappliedPlutusScript)
+import           Plutus.V2.Ledger.Api
+import           Plutus.V2.Ledger.Api (TokenName)
+import           PlutusTx
+import           Prelude              (IO, Maybe (..), Show (..), String,
+                                       return)
+import           Token                (tokenPlutusScript, tokenPolicySerializer,
+                                       tokenUnappliedPlutusScript)
+import           Validator            (validatorPlutusScript,
+                                       validatorScriptSerializer,
+                                       validatorUnappliedPlutusScript)
 
 
 --    FOR TESTING    --
@@ -39,8 +45,8 @@ testNFTTokenName = TokenName "Thread_NFT"
 testNftPolicySerializer :: B.ByteString
 testNftPolicySerializer = nftPolicySerializer testOref testNFTTokenName
 
-testNFTParams :: NFTParams 
-testNFTParams = NFTParams 
+testNFTParams :: NFTParams
+testNFTParams = NFTParams
   {
     policyId = nftCurrencySymbol testOref testNFTTokenName
   , name = testNFTTokenName
@@ -63,4 +69,7 @@ createTestPlutusScripts = do
   _ <- writeFileTextEnvelope "./scripts/nft.json" Nothing (nftPlutusScript testOref testNFTTokenName)
   _ <- writeFileTextEnvelope "./scripts/token.json" Nothing (tokenPlutusScript testNFTParams testTokenName)
   _ <- writeFileTextEnvelope "./scripts/validator.json" Nothing (validatorPlutusScript testNFTParams)
+  _ <- writeFileTextEnvelope "./scripts/nft_unapplied.json" Nothing nftUnappliedPlutusScript
+  _ <- writeFileTextEnvelope "./scripts/token_unapplied.json" Nothing tokenUnappliedPlutusScript
+  _ <- writeFileTextEnvelope "./scripts/validator_unapplied.json" Nothing validatorUnappliedPlutusScript
   return()
