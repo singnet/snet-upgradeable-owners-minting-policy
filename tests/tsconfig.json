@@ -6,8 +6,8 @@
     "moduleResolution": "nodenext",
     "target": "es2022",
     "outDir": "dist",
+    "sourceMap": true,
     "resolveJsonModule": true
-  
   },
   "include": ["./offchain.ts", "./secret.ts", "offchain_emulated.ts"],
   "exclude": ["node_modules"]

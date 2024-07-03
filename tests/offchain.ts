@@ -1,6 +1,5 @@
 import { 
     Address, 
-    Blockfrost, 
     C, 
     Constr, 
     Data, 
@@ -19,23 +18,13 @@ import {
     getAddressDetails
 } from "lucid-cardano"; 
 
-import { Buffer } from 'buffer'
-
-
 const { PrivateKey } = C;
-import { 
-    blockfrostKey, 
-    owner1PrivateKey, 
-    owner2PrivateKey, 
-    owner3PrivateKey
-} from "./secret.js"
 import nftPlutusScript from "../scripts/nft.json" assert { type: "json" }
 import nftUnappliedPlutusScript from "../scripts/nft_unapplied.json" assert { type: "json" }
 import tokenPlutusScript from "../scripts/token.json" assert { type: "json" }
 import tokenUnappliedPlutusScript from "../scripts/token_unapplied.json" assert { type: "json" }
 import ValidatorPlutusScript from "../scripts/validator.json" assert { type: "json" }
 import ValidatorUnappliedPlutusScript from "../scripts/validator_unapplied.json" assert { type: "json" }
-import { assert } from "console";
 
 export type oref = {
   txHash: string,
@@ -72,17 +61,37 @@ const addr2 = await (await Lucid.new(undefined, "Custom"))
   .selectWalletFromPrivateKey(owner2KeyBech32).wallet.address();
 const addr3 = await (await Lucid.new(undefined, "Custom"))
   .selectWalletFromPrivateKey(owner3KeyBech32).wallet.address();
-console.log("addr3: ", addr3)
 
 const pkh1: string = getAddressDetails(addr1).paymentCredential?.hash || "";
 const pkh2: string = getAddressDetails(addr2).paymentCredential?.hash || "";
 const pkh3: string = getAddressDetails(addr3).paymentCredential?.hash || "";
 
-const emulator = new Emulator([{
-  address: addr0,
-  assets: { lovelace: 3000000000n },
-  // TODO: need to figure out what funds are needed in owners addresses to succeed the tests 
-}]);
+const emulator = new Emulator([
+  {
+    address: addr0,
+    assets: { lovelace: 3_000_000_000n },
+  },
+  {
+    address: addr0,
+    assets: { lovelace: 5_000_000n }, // collateral
+  },
+  {
+    address: addr1,
+    assets: { lovelace: 3_000_000_000n },
+  },
+  {
+    address: addr1,
+    assets: { lovelace: 5_000_000n }, // collateral
+  },
+  {
+    address: addr2,
+    assets: { lovelace: 3_000_000_000n },
+  },
+  {
+    address: addr2,
+    assets: { lovelace: 5_000_000n }, // collateral
+  },
+]);
 
 const lucid = await Lucid.new(emulator);
 
@@ -96,7 +105,7 @@ function completeScript(policy: string) : { type: ScriptType; script: string; } 
 // TODO: use
 let outRefToData = (outRef: OutRef) => Data.to( 
   new Constr(0, [
-    new Constr(0, [Data.to(outRef.txHash)]),
+    new Constr(0, [outRef.txHash]),
     BigInt(outRef.outputIndex)
   ])
   );
@@ -113,8 +122,9 @@ const NftParamsToData = (policy : Script, nft_token_name : string) : Data => {
 // TODO: use
 const applyNftPolicy = (outRef : OutRef) => applyParamsToScript(
     nftUnappliedPlutusScript["cborHex"],
-    [ outRefToData(outRef)
-      , Data.to( fromText("Thread_NFT") )
+    [
+      outRefToData(outRef),
+      Data.to( fromText("Thread_NFT") )
     ],
   )
 
@@ -169,31 +179,42 @@ const isTxValidated = async(txHash: string) => {
 export async function mintNFT(): Promise<TxHash> {
     // TODO: now this function should probably return already applied scripts
     const utxos = await lucid.wallet.getUtxos()
-    const utxo = utxos.find(
-        (utxo) => true
-    )
+    const utxo = utxos[0];
     if (!utxo) throw new Error("Utxo is required to mint NFT")
-    
-    let nftPolicy = applyNftPolicy( {
+
+    let nftPolicy = completeScript(applyNftPolicy( {
       txHash: utxo.txHash,
       outputIndex: utxo.outputIndex,
-    });
+    }));
+
+    console.log(nftPolicy);
+
+    const nftPolicyId: PolicyId = lucid.utils.mintingPolicyToId(nftPolicy);
+    const nftUnit: Unit = nftPolicyId + fromText("Thread_NFT");
+
+    const nftParams = Data.to(
+      new Constr(0, [nftPolicyId, fromText("Thread_NFT")])
+    );
+    const validatorScript: SpendingValidator = completeScript(applyValidator(nftParams))
+    const validatorAddress: Address = lucid.utils.validatorToAddress(validatorScript)
 
     const tx = await lucid
       .newTx()
       .collectFrom([utxo])
-      .mintAssets({ [nftUnit]: 1n }, emptyRedeemer)
+      .mintAssets({ [nftUnit]: 1n }, Data.void())
       .validTo(emulator.now() + 100000)
       .payToContract(
-        validatorAddress, 
+        validatorAddress,
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n}
       )
-      .attachMintingPolicy(completeScript(nftPolicy))
+      .attachMintingPolicy(nftPolicy)
       .complete();
-  
+
+    console.log('built');
+
     const signedTx = await tx.sign().complete();
-  
+
     const txHash = await signedTx.submit();
     return txHash;
 }
@@ -548,8 +569,9 @@ const main = async() => {
       // NOTE: at certain point only single key is being used for wallet
       lucid.selectWalletFromPrivateKey(mp0KeyBech32)
 
+      await delay(1000*5)
       console.log("mint NFT: ", await mintNFT())
-      delay(secondsToWait)
+      await delay(secondsToWait)
 
       // todo: need to use the applied scripts below
 
