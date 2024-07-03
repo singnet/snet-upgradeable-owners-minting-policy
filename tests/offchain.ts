@@ -4,15 +4,19 @@ import {
     C, 
     Constr, 
     Data, 
+    Emulator, 
     Lucid, 
+    OutRef, 
     PolicyId, 
     Redeemer, 
+    Script, 
     ScriptType, 
     SpendingValidator, 
     TxHash, 
     Unit, 
+    applyParamsToScript, 
     fromText, 
-    getAddressDetails 
+    getAddressDetails
 } from "lucid-cardano"; 
 
 import { Buffer } from 'buffer'
@@ -26,8 +30,12 @@ import {
     owner3PrivateKey
 } from "./secret.js"
 import nftPlutusScript from "../scripts/nft.json" assert { type: "json" }
+import nftUnappliedPlutusScript from "../scripts/nft_unapplied.json" assert { type: "json" }
 import tokenPlutusScript from "../scripts/token.json" assert { type: "json" }
+import tokenUnappliedPlutusScript from "../scripts/token_unapplied.json" assert { type: "json" }
 import ValidatorPlutusScript from "../scripts/validator.json" assert { type: "json" }
+import ValidatorUnappliedPlutusScript from "../scripts/validator_unapplied.json" assert { type: "json" }
+import { assert } from "console";
 
 export type oref = {
   txHash: string,
@@ -44,39 +52,39 @@ function delay(ms: number) {
     return new Promise( resolve => setTimeout(resolve, ms) );
 }
 
+// used for utxo for oneshot minting policy
+const mp0Key = PrivateKey.generate_ed25519()
+// owner keys
+const owner1Key = PrivateKey.generate_ed25519()
+const owner2Key = PrivateKey.generate_ed25519()
+const owner3Key = PrivateKey.generate_ed25519()
 
-// set blockfrost endpoint
-const lucid = await Lucid.new(
-    new Blockfrost(
-        "https://cardano-preprod.blockfrost.io/api/v0",
-        blockfrostKey
-    ),
-    "Preprod"
-);
-
-const owner1Key = PrivateKey.from_normal_bytes(
-    Buffer.from(owner1PrivateKey, "hex") 
-)
-const owner2Key = PrivateKey.from_normal_bytes(
-     Buffer.from(owner2PrivateKey, "hex") 
-)
-const owner3Key = PrivateKey.from_normal_bytes(
-    Buffer.from(owner3PrivateKey, "hex") 
-)
-
+const mp0KeyBech32 = mp0Key.to_bech32()
 const owner1KeyBech32 = owner1Key.to_bech32()
 const owner2KeyBech32 = owner2Key.to_bech32()
 const owner3KeyBech32 = owner3Key.to_bech32()
 
-const addr2: Address = await (lucid.selectWalletFromPrivateKey(owner2KeyBech32)).wallet.address()
-const addr3: Address = await (lucid.selectWalletFromPrivateKey(owner3KeyBech32)).wallet.address()
+const addr0 = await (await Lucid.new(undefined, "Custom"))
+  .selectWalletFromPrivateKey(mp0KeyBech32).wallet.address();
+const addr1 = await (await Lucid.new(undefined, "Custom"))
+  .selectWalletFromPrivateKey(owner1KeyBech32).wallet.address();
+const addr2 = await (await Lucid.new(undefined, "Custom"))
+  .selectWalletFromPrivateKey(owner2KeyBech32).wallet.address();
+const addr3 = await (await Lucid.new(undefined, "Custom"))
+  .selectWalletFromPrivateKey(owner3KeyBech32).wallet.address();
 console.log("addr3: ", addr3)
-const addr1: Address = await (lucid.selectWalletFromPrivateKey(owner1KeyBech32)).wallet.address()
 
 const pkh1: string = getAddressDetails(addr1).paymentCredential?.hash || "";
 const pkh2: string = getAddressDetails(addr2).paymentCredential?.hash || "";
 const pkh3: string = getAddressDetails(addr3).paymentCredential?.hash || "";
 
+const emulator = new Emulator([{
+  address: addr0,
+  assets: { lovelace: 3000000000n },
+  // TODO: need to figure out what funds are needed in owners addresses to succeed the tests 
+}]);
+
+const lucid = await Lucid.new(emulator);
 
 function completeScript(policy: string) : { type: ScriptType; script: string; } {
     return {
@@ -85,13 +93,51 @@ function completeScript(policy: string) : { type: ScriptType; script: string; } 
     };
 };
 
+// TODO: use
+let outRefToData = (outRef: OutRef) => Data.to( 
+  new Constr(0, [
+    new Constr(0, [Data.to(outRef.txHash)]),
+    BigInt(outRef.outputIndex)
+  ])
+  );
+
+// TODO: use
+const NftParamsToData = (policy : Script, nft_token_name : string) : Data => { 
+  // console.log("nft hash?: ", lucid.utils.mintingPolicyToId(policy));
+  return Data.to( new Constr(0, [ 
+     lucid.utils.mintingPolicyToId(policy), // todo: check if its already hex encoded with above print!!!
+    Data.to( fromText("Thread_NFT"))
+   ]))
+}
+
+// TODO: use
+const applyNftPolicy = (outRef : OutRef) => applyParamsToScript(
+    nftUnappliedPlutusScript["cborHex"],
+    [ outRefToData(outRef)
+      , Data.to( fromText("Thread_NFT") )
+    ],
+  )
+
+// TODO: use
+const applyTokenPolicy = (nftParams : Data, token_name: string) => applyParamsToScript(
+  tokenUnappliedPlutusScript["cborHex"],
+  [ nftParams,
+    Data.to( fromText(token_name) )
+  ],
+)
+
+// TODO: use
+const applyValidator = (nftParams : Data) => applyParamsToScript(
+  nftUnappliedPlutusScript["cborHex"],
+  [ nftParams
+  ],
+)
 
 /*   NFT   */
 const nftPolicy = nftPlutusScript["cborHex"]
 const nftPolicyId: PolicyId = lucid.utils.mintingPolicyToId(completeScript(nftPolicy));
 const nftUnit: Unit = nftPolicyId + fromText("Thread_NFT");
 const emptyRedeemer = Data.void();
-
 
 /*   Token   */
 const tokenPolicy = tokenPlutusScript["cborHex"]
@@ -121,18 +167,23 @@ const isTxValidated = async(txHash: string) => {
 
 // Mint thread NFT for `upgradeableOwnersValidator`
 export async function mintNFT(): Promise<TxHash> {
+    // TODO: now this function should probably return already applied scripts
     const utxos = await lucid.wallet.getUtxos()
     const utxo = utxos.find(
-        (utxo) =>
-          utxo.txHash === threadOref.txHash && utxo.outputIndex === threadOref.outputIndex
+        (utxo) => true
     )
     if (!utxo) throw new Error("Utxo is required to mint NFT")
+    
+    let nftPolicy = applyNftPolicy( {
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    });
 
     const tx = await lucid
       .newTx()
       .collectFrom([utxo])
       .mintAssets({ [nftUnit]: 1n }, emptyRedeemer)
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .payToContract(
         validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
@@ -178,7 +229,7 @@ export async function mintTokenWithOwners12(token: Unit, amount: bigint) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachMintingPolicy(tokenScript)
       .attachSpendingValidator(validatorScript)
       .complete();
@@ -236,7 +287,7 @@ export async function notOwnerMinting(token: Unit, amount: bigint) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachMintingPolicy(tokenScript)
       .attachSpendingValidator(validatorScript)
       .complete();
@@ -270,7 +321,7 @@ export async function mintTokenWithOwners23(token: Unit, amount: bigint) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachMintingPolicy(tokenScript)
       .attachSpendingValidator(validatorScript)
       .complete();
@@ -318,7 +369,7 @@ export async function addOwner3WithOwners12() {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachSpendingValidator(validatorScript)
       .complete();
 
@@ -347,7 +398,7 @@ export async function addOwner1WithOwners23(threshold: number) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachSpendingValidator(validatorScript)
       .complete();
 
@@ -377,7 +428,7 @@ export async function mintTokenWithThreeOwners(token: Unit, amount: bigint) {
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
 
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachMintingPolicy(tokenScript)
       .attachSpendingValidator(validatorScript)
       .complete();
@@ -409,7 +460,7 @@ export async function removeFirstOwnerWithThreeOwners(threshold: number) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachSpendingValidator(validatorScript)
       .complete();
 
@@ -441,7 +492,7 @@ export async function updateThresholdWithOwners23(newThreshold: number) {
       .payToContract(validatorAddress, 
         {inline: Data.to(testDatum, MultiSigDatum)},
         {lovelace: 2000000n, [nftUnit]: 1n})
-      .validTo(Date.now() + 100000)
+      .validTo(emulator.now() + 100000)
       .attachSpendingValidator(validatorScript)
       .complete();
 
@@ -472,7 +523,7 @@ export async function setToInitState(threshold: number) {
     .payToContract(validatorAddress, 
       {inline: Data.to(testDatum, MultiSigDatum)},
       {lovelace: 2000000n, [nftUnit]: 1n})
-    .validTo(Date.now() + 100000)
+    .validTo(emulator.now() + 100000)
     .attachSpendingValidator(validatorScript)
     .complete();
 
@@ -493,8 +544,14 @@ const secondsToWait: number = 1000*40
 
 const main = async() => {
     try {
-      //console.log("mint NFT: ", await mintNFT(testDatum))
-      //delay(secondsToWait)
+      // this sets the wallet owner to the owner owning UTXO for one shot mint
+      // NOTE: at certain point only single key is being used for wallet
+      lucid.selectWalletFromPrivateKey(mp0KeyBech32)
+
+      console.log("mint NFT: ", await mintNFT())
+      delay(secondsToWait)
+
+      // todo: need to use the applied scripts below
 
       console.log(
         "\n*****  Testing: MINTING    *****\n",

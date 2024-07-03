@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
     "esModuleInterop": true,
-    "lib": ["es2020"],
+    "lib": ["es2020", "dom"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "es2022",
@@ -9,6 +9,6 @@
     "resolveJsonModule": true
   
   },
-  "include": ["./offchain.ts", "./secret.ts"],
+  "include": ["./offchain.ts", "./secret.ts", "offchain_emulated.ts"],
   "exclude": ["node_modules"]
   }
