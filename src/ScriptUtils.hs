@@ -10,6 +10,7 @@ module ScriptUtils(
   toPlutusScriptV2,
   currencySymbol,
   plutusScriptToByteString,
+  tracedUnsafeFrom
 ) where
 
 import           Cardano.Api.Shelley            (PlutusScript (..),
@@ -33,9 +34,10 @@ import           Plutus.V2.Ledger.Api           (CurrencySymbol, MintingPolicy,
 import qualified Plutus.V2.Ledger.Api           as V2
 import           Plutus.V2.Ledger.Contexts      as V2
 import           PlutusTx
-import           PlutusTx                       (CompiledCode)
+import           PlutusTx                       (CompiledCode, UnsafeFromData(unsafeFromBuiltinData))
 import           Prelude                        (IO, Maybe (..), Show (..),
                                                  String, return, ($), (.))
+import PlutusTx.Prelude (BuiltinData, BuiltinString, trace)
 
 currencySymbol :: MintingPolicy -> CurrencySymbol
 currencySymbol = mpsSymbol . PSU.V2.mintingPolicyHash
@@ -49,3 +51,7 @@ toPlutusScriptV2 script =
 
 plutusScriptToByteString :: PlutusScript PlutusScriptV2 -> B.ByteString
 plutusScriptToByteString x = B16.encode $ serialiseToCBOR x
+
+{-# INLINABLE tracedUnsafeFrom #-}
+tracedUnsafeFrom :: forall a. UnsafeFromData a => BuiltinString -> BuiltinData -> a
+tracedUnsafeFrom label d = trace label $ unsafeFromBuiltinData d

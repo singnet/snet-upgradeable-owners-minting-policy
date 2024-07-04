@@ -34,11 +34,11 @@ import           Plutus.V2.Ledger.Api           (CurrencySymbol, MintingPolicy,
                                                  mkMintingPolicyScript)
 import qualified Plutus.V2.Ledger.Api           as V2
 import           Plutus.V2.Ledger.Contexts      as V2
-import           PlutusTx                       (CompiledCode)
+import           PlutusTx                       (CompiledCode, unsafeFromBuiltinData, toBuiltinData)
 import qualified PlutusTx
 import           PlutusTx.Prelude
 import           Prelude                        (IO, Show (..), String)
-import           ScriptUtils                    (toPlutusScriptV2)
+import           ScriptUtils                    (toPlutusScriptV2,tracedUnsafeFrom)
 
 -- data type for thread NFT
 data NFTParams = NFTParams
@@ -75,19 +75,30 @@ mkNFTPolicy oref tn _ ctx = traceIfFalse "UTxO not consumed"   hasUTxO &&
         [(_, tn'', amt)] -> tn'' == tn && amt == 1
         _                -> False
 
-policyUnapplied :: CompiledCode (TxOutRef -> TokenName -> BuiltinData -> BuiltinData -> ())
+                              -- TxOutRef -> TokenName -> BuiltinData -> BuiltinData -> ()
+{-# INLINABLE policyUnapplied #-}
+policyUnapplied :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ())
 policyUnapplied =
     $$(PlutusTx.compile [|| wrap ||])
   where
-    wrap out tn = Scripts.mkUntypedMintingPolicy $ mkNFTPolicy out tn
+    wrap out tn = Scripts.mkUntypedMintingPolicy $ 
+      mkNFTPolicy (tracedUnsafeFrom "Couldn't deserialize TxOutRef." out) (tracedUnsafeFrom "Couldn't deserialize TokenName." tn)
+
+-- {-# INLINABLE policyUnapplied #-}
+-- policyUnapplied :: CompiledCode (TxOutRef -> TokenName -> BuiltinData -> BuiltinData -> ())
+-- policyUnapplied =
+--     $$(PlutusTx.compile [|| wrap ||])
+--   where
+--     wrap out tn = Scripts.mkUntypedMintingPolicy $ mkNFTPolicy (unsafeFromBuiltinData out) tn
+
 
 policy :: TxOutRef -> TokenName -> MintingPolicy
 policy outRef tokenName = mkMintingPolicyScript $
     policyUnapplied
     `PlutusTx.applyCode`
-     PlutusTx.liftCode outRef
+     PlutusTx.liftCode (toBuiltinData outRef)
      `PlutusTx.applyCode`
-     PlutusTx.liftCode tokenName
+     PlutusTx.liftCode (toBuiltinData tokenName)
 
 currencySymbol :: MintingPolicy -> CurrencySymbol
 currencySymbol = mpsSymbol . PSU.V2.mintingPolicyHash

@@ -37,13 +37,13 @@ import           Plutus.V2.Ledger.Api      (CurrencySymbol, Datum (Datum),
 import           Plutus.V2.Ledger.Contexts (ownCurrencySymbol, txOutDatum)
 import           PlutusTx                  (CompiledCode, applyCode, compile,
                                             fromBuiltinData, liftCode,
-                                            makeIsDataIndexed, makeLift)
+                                            makeIsDataIndexed, makeLift, unsafeFromBuiltinData, toBuiltinData)
 import           PlutusTx.Prelude
 import           PlutusTx.Prelude          (Bool (..), Integer, Maybe (..), all,
                                             elem, traceError, traceIfFalse, ($),
                                             (&&), (.), (==), (>))
 import           Prelude                   (IO, Show (..), String, return)
-import           ScriptUtils               (toPlutusScriptV2)
+import           ScriptUtils               (toPlutusScriptV2, tracedUnsafeFrom)
 
 -- Custom data type to hold the owners' public keys
 data ValidatorDatum = ValidatorDatum
@@ -89,19 +89,22 @@ mkTokenPolicy nftparams tokenName _ ctx =
       if isMinting
         then scriptValidationIsEnsured else True
 
-policyUnapplied :: CompiledCode (NFTParams -> TokenName -> UntypedMintingPolicy)
+--                               NFTParams   -> TokenName   -> UntypedMintingPolicy
+{-# INLINABLE policyUnapplied #-}
+policyUnapplied :: CompiledCode (BuiltinData -> BuiltinData -> UntypedMintingPolicy)
 policyUnapplied =
     $$(PlutusTx.compile [|| wrap ||])
   where
-    wrap nparams tn = Scripts.mkUntypedMintingPolicy $ mkTokenPolicy nparams tn
+    wrap nparams tn = Scripts.mkUntypedMintingPolicy $ 
+      mkTokenPolicy (tracedUnsafeFrom "Couldn't decode NFTParams" nparams) (tracedUnsafeFrom "Couldn't decode TokenName" tn)
 
 policy :: NFTParams -> TokenName -> MintingPolicy
 policy nftparams tokenName = mkMintingPolicyScript $
     policyUnapplied
     `PlutusTx.applyCode`
-     PlutusTx.liftCode nftparams
+     PlutusTx.liftCode (toBuiltinData nftparams)
      `PlutusTx.applyCode`
-     PlutusTx.liftCode tokenName
+     PlutusTx.liftCode (toBuiltinData tokenName)
 
 -- Serialization
 tokenPlutusScript :: NFTParams -> TokenName -> PlutusScript PlutusScriptV2

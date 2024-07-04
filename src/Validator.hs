@@ -33,10 +33,11 @@ import           Plutus.V2.Ledger.Api      (CurrencySymbol, MintingPolicy,
                                             mkMintingPolicyScript)
 import qualified Plutus.V2.Ledger.Api      as V2
 import           Plutus.V2.Ledger.Contexts as PV2
+import           PlutusTx                  (unsafeFromBuiltinData, toBuiltinData)
 import           PlutusTx
 import           PlutusTx.Prelude          as PP
 import           Prelude                   (Eq, IO, Show, String, show)
-import           ScriptUtils               (toPlutusScriptV2)
+import           ScriptUtils               (toPlutusScriptV2, tracedUnsafeFrom)
 
 -- Datum type
 data MultiSigDatum = MultiSigDatum
@@ -110,17 +111,20 @@ upgradeableOwnersValidator nftparams datum redeemer ctx =
     checkThresholdInterval :: Integer -> Integer -> Bool
     checkThresholdInterval expectedThreshold maxThreshold = expectedThreshold >= 2 && expectedThreshold <= maxThreshold
 
-validatorUnapplied :: CompiledCode (NFTParams -> UntypedValidator)
+--                                  NFTParams -> UntypedValidator
+{-# INLINABLE validatorUnapplied #-}
+validatorUnapplied :: CompiledCode (BuiltinData -> UntypedValidator)
 validatorUnapplied =
     $$(PlutusTx.compile [|| wrap ||])
   where
-    wrap nparams = Scripts.mkUntypedValidator $ upgradeableOwnersValidator nparams
+    wrap nparams = Scripts.mkUntypedValidator $ 
+      upgradeableOwnersValidator (tracedUnsafeFrom "Couldn't decode NFTParams" nparams)
 
 validator :: NFTParams -> V2.Validator
 validator nftparams = V2.mkValidatorScript $
     validatorUnapplied
     `PlutusTx.applyCode`
-     PlutusTx.liftCode nftparams
+     PlutusTx.liftCode (toBuiltinData nftparams)
 
 -- Serialization
 validatorPlutusScript :: NFTParams -> PlutusScript PlutusScriptV2
