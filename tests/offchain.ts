@@ -35,8 +35,8 @@ export type oref = {
 }
 
 export const threadOref: oref = {
-  txHash: "f160ee01ff83321e37289837d6998273c4629667fb8f85b1a938fab81e01806b",
-  outputIndex: 1
+  txHash: "928270c029644e6dcdfe2c63ca55e65dfbd3d7827ccac76abf63796329bb6afe",
+  outputIndex: 0
 }
 
 // due to delays in blockchain
@@ -493,8 +493,8 @@ const secondsToWait: number = 1000*40
 
 const main = async() => {
     try {
-      //console.log("mint NFT: ", await mintNFT(testDatum))
-      //delay(secondsToWait)
+      //console.log("mint NFT: ", await mintNFT())
+      //await delay(secondsToWait)
 
       console.log(
         "\n*****  Testing: MINTING    *****\n",
