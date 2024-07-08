@@ -35,8 +35,8 @@ export type oref = {
 }
 
 export const threadOref: oref = {
-  txHash: "928270c029644e6dcdfe2c63ca55e65dfbd3d7827ccac76abf63796329bb6afe",
-  outputIndex: 0
+  txHash: "110ec3f121356231f584276c9b23cee502f3c4d518ce2ef4d09d7f6748b6f6bd",
+  outputIndex: 1
 }
 
 // due to delays in blockchain
