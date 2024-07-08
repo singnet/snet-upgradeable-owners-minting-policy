@@ -31,7 +31,7 @@ import Validator            (validatorScriptSerializer, validatorPlutusScript)
 
 -- Only parameter to input manually, then `createTestPlutusScripts` can be executed
 testOref :: TxOutRef
-testOref = TxOutRef "f160ee01ff83321e37289837d6998273c4629667fb8f85b1a938fab81e01806b" 1
+testOref = TxOutRef "928270c029644e6dcdfe2c63ca55e65dfbd3d7827ccac76abf63796329bb6afe" 0
 
 testNFTTokenName :: TokenName
 testNFTTokenName = TokenName "Thread_NFT"

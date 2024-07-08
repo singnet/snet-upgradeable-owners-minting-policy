@@ -19,6 +19,7 @@ import Plutus.V2.Ledger.Contexts               as PV2
 import PlutusTx
 import PlutusTx.Prelude                        as PP
 import Plutus.V1.Ledger.Value                  as Value
+import Ledger.Value                            as LV
 import Plutus.V2.Ledger.Api          qualified as V2
 import Plutus.Script.Utils.Typed               as Scripts
 import Data.ByteString.Lazy          qualified as LBS
@@ -29,7 +30,7 @@ import Codec.Serialise                         as Serialise
 import Prelude                                 (Eq, Show, IO, show, String)
 import Cardano.Api.Shelley                     (displayError, writeFileTextEnvelope, PlutusScript (PlutusScriptSerialised),
                                                 PlutusScriptV2, serialiseToCBOR)   
-import NFT                                     (hasNFT, NFTParams(..))
+import NFT                                     (NFTParams(..), nftAsset)
 
 
 -- Datum type
@@ -80,10 +81,13 @@ upgradeableOwnersValidator nftparams datum redeemer ctx =
 
     checkMinSigs :: Bool
     checkMinSigs = PP.length (PP.filter (`PP.elem` txInfoSignatories info) (owners datum)) >= minSigs datum
+    
+    containsOnlyNFTAndAda :: Value -> Bool
+    containsOnlyNFTAndAda outValue = LV.noAdaValue outValue == assetClassValue (nftAsset nftparams) 1
 
     getOutputWithNFT :: TxOut
     getOutputWithNFT = case PV2.getContinuingOutputs ctx of
-        [out] | hasNFT nftparams $ txOutValue $ out -> out
+        [out] | containsOnlyNFTAndAda $ txOutValue $ out -> out
         _ -> traceError "no output with nft"
 
     getContinuingOutputDatum :: MultiSigDatum
