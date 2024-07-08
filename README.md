@@ -14,7 +14,7 @@ From nix shell at the root directory run:
 ```
 
 ## Project structure 
-
+  - `./Protocol_Specification` - documentation for Cardano scripts
   - `./src` - on-chain scripts
   - `./tests` - tests that involve off-chain code written in Lucid library
     - `offchain.ts`
