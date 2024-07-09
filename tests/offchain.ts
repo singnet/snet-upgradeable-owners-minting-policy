@@ -35,8 +35,8 @@ export type oref = {
 }
 
 export const threadOref: oref = {
-  txHash: "928270c029644e6dcdfe2c63ca55e65dfbd3d7827ccac76abf63796329bb6afe",
-  outputIndex: 0
+  txHash: "110ec3f121356231f584276c9b23cee502f3c4d518ce2ef4d09d7f6748b6f6bd",
+  outputIndex: 1
 }
 
 // due to delays in blockchain
@@ -303,14 +303,13 @@ export async function burnTokens(script: { type: ScriptType; script: string; }, 
     console.log("✅ txHash from `burnTokens`: " + txHash + "\n");
 }
 
-export async function addOwner3WithOwners12() {
+export async function addOwnerWithOwners12(ownerToAdd: string) {
     console.log(" - add owner with 2 owners");
-    testDatum.owners = [String(pkh3), String(pkh1), String(pkh2)]
 
     const utxWithThread = (await lucid.utxosAtWithUnit(validatorAddress, nftUnit))[0] 
     const tx = await lucid
       .newTx()
-      .collectFrom([utxWithThread], redemeerAddOwner(pkh3, Number(testDatum.minSigs)))
+      .collectFrom([utxWithThread], redemeerAddOwner(ownerToAdd, Number(testDatum.minSigs)))
       
       .addSignerKey(pkh1)  
       .addSignerKey(pkh2)  
@@ -329,17 +328,16 @@ export async function addOwner3WithOwners12() {
 
     await isTxValidated(txHash)
 
-    console.log("✅ txHash from `addOwner3WithOwners12`: " + txHash + "\n");
+    console.log("✅ txHash from `addOwnerWithOwners12`: " + txHash + "\n");
 }
 
-export async function addOwner1WithOwners23(threshold: number) {
-    console.log(" - add owner1 with owner2 and owner3");
-    testDatum.owners = [String(pkh1), String(pkh3), String(pkh2)]
+export async function addOwnerWithOwners23(ownerToAdd: string, threshold: number) {
+    console.log(" - add owner with owner2 and owner3");
 
     const utxWithThread = (await lucid.utxosAtWithUnit(validatorAddress, nftUnit))[0] 
     const tx = await lucid
       .newTx()
-      .collectFrom([utxWithThread], redemeerAddOwner(pkh1, threshold))
+      .collectFrom([utxWithThread], redemeerAddOwner(ownerToAdd, threshold))
       
       .addSignerKey(pkh2)  
       .addSignerKey(pkh3)  
@@ -358,7 +356,7 @@ export async function addOwner1WithOwners23(threshold: number) {
 
     await isTxValidated(txHash)
 
-    console.log("✅ txHash from `addOwner1WithOwners23`: " + txHash + "\n");
+    console.log("✅ txHash from `addOwnerWithOwners23`: " + txHash + "\n");
 }
 
 export async function mintTokenWithThreeOwners(token: Unit, amount: bigint) {
@@ -511,12 +509,13 @@ const main = async() => {
       )
       await burnTokens(tokenScript, tokenUnit, -3n)
 
-
       console.log(
         "\n*****  Testing: ADD owner & MINT tokens *****\n",
       )
 
-      await addOwner3WithOwners12()
+      testDatum.owners = [String(pkh3), String(pkh1), String(pkh2)]
+      // add owner 3
+      await addOwnerWithOwners12(pkh3)
       await delay(secondsToWait)
 
       await mintTokenWithThreeOwners(tokenUnit, 5n)
@@ -538,7 +537,9 @@ const main = async() => {
       console.log(
         "\n*****  Testing: ADD owner & UPDATE threshold  *****\n",
       )
-      await addOwner1WithOwners23(2)
+      testDatum.owners = [String(pkh1), String(pkh3), String(pkh2)]
+      // add owner 1
+      await addOwnerWithOwners23(pkh1, 2)
       await delay(secondsToWait)
 
       await updateThresholdWithOwners23(3)
@@ -547,12 +548,25 @@ const main = async() => {
       lucid.selectWalletFromPrivateKey(owner1KeyBech32)
       await mintTokenWithThreeOwners(tokenUnit, 30n)
 
+
       console.log(
         "\n*****  Setting to initial state   *****\n",
       )
       //remove third owner and update threshold to `2` in one transaction 
       await setToInitState(2)
       await delay(secondsToWait)
+
+      console.log(
+        "\n*****  Duplication test  *****\n",
+      )
+      testDatum.owners = [String(pkh2), String(pkh1), String(pkh2)]
+      // add owner 2
+      try {
+        await addOwnerWithOwners12(pkh2)
+      } catch (e) {
+        console.log("script error: ", e);
+        console.log("✅ Duplication test passed");
+      }
     } catch(error) {
         console.log("Error while running tests: ", error)
    }

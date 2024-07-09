@@ -5,6 +5,7 @@
 {-# LANGUAGE ImportQualifiedPost   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE BangPatterns          #-}
 
 module NFT(
   hasNFT,
@@ -56,13 +57,13 @@ mkNFTPolicy oref tn _ ctx = traceIfFalse "UTxO not consumed"   hasUTxO &&
                             traceIfFalse "wrong amount minted" checkMintedAmount
   where
     info :: TxInfo
-    info = scriptContextTxInfo ctx
+    !info = scriptContextTxInfo ctx
 
     hasUTxO :: Bool
-    hasUTxO = any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info
+    !hasUTxO = any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info
 
     checkMintedAmount :: Bool
-    checkMintedAmount = case flattenValue (txInfoMint info) of
+    !checkMintedAmount = case flattenValue (txInfoMint info) of
         [(_, tn'', amt)] -> tn'' == tn && amt == 1
         _                -> False
 
