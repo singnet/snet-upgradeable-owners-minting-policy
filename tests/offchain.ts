@@ -5,6 +5,7 @@ import {
     Data, 
     Emulator, 
     Lucid, 
+    MintingPolicy, 
     OutRef, 
     PolicyId, 
     Redeemer, 
@@ -110,21 +111,31 @@ let outRefToData = (outRef: OutRef) => Data.to(
   ])
   );
 
+const NFT_TOKEN_NAME = "Thread_NFT";
+
 // TODO: use
-const NftParamsToData = (policy : Script, nft_token_name : string) : Data => { 
+const nftParamsToData = (policy : Script) : Data => { 
   // console.log("nft hash?: ", lucid.utils.mintingPolicyToId(policy));
   return Data.to( new Constr(0, [ 
      lucid.utils.mintingPolicyToId(policy), // todo: check if its already hex encoded with above print!!!
-    Data.to( fromText("Thread_NFT"))
+    fromText(NFT_TOKEN_NAME)
    ]))
 }
+
+const TokenNameSchema = Data.Bytes();
+
+type TokenNameData = Data.Static<typeof TokenNameSchema>;
+const TokenNameData = TokenNameSchema as unknown as TokenNameData;
 
 // TODO: use
 const applyNftPolicy = (outRef : OutRef) => applyParamsToScript(
     nftUnappliedPlutusScript["cborHex"],
     [
       outRefToData(outRef),
-      Data.to( fromText("Thread_NFT") )
+      // Data.to(
+        fromText(NFT_TOKEN_NAME),
+      //   TokenNameData,
+      // )
     ],
   )
 
@@ -148,6 +159,8 @@ const nftPolicy = nftPlutusScript["cborHex"]
 const nftPolicyId: PolicyId = lucid.utils.mintingPolicyToId(completeScript(nftPolicy));
 const nftUnit: Unit = nftPolicyId + fromText("Thread_NFT");
 const emptyRedeemer = Data.void();
+// this changes to () but encoded as PlutusData, that ends up being `Constr 0 []`
+const plutusDataUnit = Data.to(new Constr(0, []))
 
 /*   Token   */
 const tokenPolicy = tokenPlutusScript["cborHex"]
@@ -175,33 +188,39 @@ const isTxValidated = async(txHash: string) => {
         throw ("Transaction wasn't validated")
 }
 
+type ProtocolScripts = {
+  nftPolicy: MintingPolicy,
+  tokenPolicy: MintingPolicy,
+  validatorScript: SpendingValidator
+};
+
 // Mint thread NFT for `upgradeableOwnersValidator`
-export async function mintNFT(): Promise<TxHash> {
+export async function mintNFT(): Promise<{ txHash: TxHash, scripts : ProtocolScripts }> {
     // TODO: now this function should probably return already applied scripts
     const utxos = await lucid.wallet.getUtxos()
     const utxo = utxos[0];
     if (!utxo) throw new Error("Utxo is required to mint NFT")
 
-    let nftPolicy = completeScript(applyNftPolicy( {
+    const nftPolicy = completeScript(applyNftPolicy( {
       txHash: utxo.txHash,
       outputIndex: utxo.outputIndex,
     }));
 
-    console.log(nftPolicy);
+    // const nftParams = nftParamsToData(nftPolicy);
+
+    // const tokenPolicy = completeScript(applyTokenPolicy(nftParams, "TToken" ));
+
+    // const validatorScript: SpendingValidator = completeScript(applyValidator( nftParams ));
 
     const nftPolicyId: PolicyId = lucid.utils.mintingPolicyToId(nftPolicy);
     const nftUnit: Unit = nftPolicyId + fromText("Thread_NFT");
 
-    const nftParams = Data.to(
-      new Constr(0, [nftPolicyId, fromText("Thread_NFT")])
-    );
-    const validatorScript: SpendingValidator = completeScript(applyValidator(nftParams))
     const validatorAddress: Address = lucid.utils.validatorToAddress(validatorScript)
 
     const tx = await lucid
       .newTx()
       .collectFrom([utxo])
-      .mintAssets({ [nftUnit]: 1n }, Data.void())
+      .mintAssets({ [nftUnit]: 1n }, plutusDataUnit)
       .validTo(emulator.now() + 100000)
       .payToContract(
         validatorAddress,
@@ -216,7 +235,8 @@ export async function mintNFT(): Promise<TxHash> {
     const signedTx = await tx.sign().complete();
 
     const txHash = await signedTx.submit();
-    return txHash;
+    // return { txHash , scripts : { nftPolicy, tokenPolicy, validatorScript } };
+    return { txHash , scripts : { nftPolicy, tokenPolicy : nftPolicy, validatorScript : nftPolicy } };
 }
 
 /*   Datum Scheme   */
