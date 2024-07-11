@@ -56,3 +56,7 @@ Further checks are:
 9. Update threshold number to 3
 10. Mint tokens with signatures of owner1, owner2, owner3
 11. Set datum from output with NFT to initial state. Initial state datum's threshold equals to 2 and signatures are required only from owner1 and owner2
+
+## Emulator tests
+
+WIP
