@@ -21,14 +21,7 @@ In this (`tests`) directory run:
 
 ## Run tests with new scripts
 
-To change scripts, enter manually only `testOref` variable in `TestSerializer.hs`. `testOref` is needed to create thread NFT token.
-Then load modules into GHCi and run
-
-```sh
-    > createTestPlutusScripts
-```
-
-Scripts will be saved in `scripts` directory in the root folder.
+To change scripts, from the root directory enter `nix-shell` and run `cabal run create-token` with needed arguments. More info about arguments, what is needed to create Plutus Scripts can be found in this [README.MD](../README.md)
 
 
 Enter `tests` directory and run:
