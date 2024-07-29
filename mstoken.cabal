@@ -36,10 +36,13 @@ library
     -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
 
 executable create-token
-  import:              lang
-  main-is:             Serializer.hs
-  hs-source-dirs:      ./src
-  build-depends:      base >=4.7 && <5
+  import:             lang
+  main-is:            Main.hs
+  hs-source-dirs:     ./src
+  other-modules:        NFT
+                      , Token
+                      , Validator
+  build-depends:        base >=4.7 && <5
                       , aeson
                       , bytestring
                       , directory
