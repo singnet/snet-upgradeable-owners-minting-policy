@@ -6,11 +6,21 @@
 Built on top of plutus-apps v1.1.0, `cabal.project` refers to its packages. Make sure to install `plutus-apps` first.
 
 ### Compile & interact with scripts
-From nix shell at the root directory run:
-
+At the root directory enter `nix shell`:
 ```sh
-    cabal update
-    cabal repl
+    nix-shell
+```
+
+Then execute `cabal run create-token` with needed arguments.
+There are four arguments:
+ - transaction hash, used to identify the specific transaction outputs
+ - id of specific transaction output to spend
+ - token name
+ - path or folder under `scripts` folder in the root directory, where new Plutus Scripts for token minting will be saved
+
+Example:
+```sh
+   cabal run create-token a71ab45081832acd58f6966b9b5d54027766b72d5db11340f70f9cc1772f90a0 2 TokenName TokenName
 ```
 
 ## Project structure 
